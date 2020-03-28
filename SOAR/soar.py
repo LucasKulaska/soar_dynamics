@@ -11,7 +11,7 @@ class SOAR:
     def GramSchmidt_basis(X):
         Y = np.zeros_like(X)
         for i, x in enumerate(X.T):
-            coef = Y.T @ v
+            coef = Y.T @ x
             x -= Y @ coef
             Y[:,i] = x / np.linalg.norm(x)
         return Y
@@ -20,7 +20,7 @@ class SOAR:
     def GramSchmidt_projection(X, v, normalized = True):
         coef = X.T @ v
         if not normalized:
-            inv_norm = np.zeros(Y.shape[1])
+            inv_norm = np.zeros(X.shape[1])
             for i, x in enumerate(X.T):
                 inv_norm[i] = 1 / np.dot(x,x)
             coef = np.multiply(coef, inv_norm)
@@ -28,8 +28,49 @@ class SOAR:
         return np.c_[X,v]
 
     def procedure(self, n):
+        ''' Q = SOAR(A, B, q1, n)
+        computes an orthonormal basis Q of the second-order Krylov subspace:
+            span{ Q }   = G_n(A,B,v_0).
+                        = {v_0, v_1, v_2, ..., v_{n-1}}
+            with    v_0 = q1 / norm(q1)
+                    v_1 = A @ v_0
+                    v_j = A @ v_{j-1} + B @ v_{j-2}
+        using space-efficient SOAR procedure.
+
+        Parameters:
+        A, B :   N-dimensional square matrices
+        q1   :   starting vector, of size N-by-1
+        n    :   dimension of second-order Krylov subspace.
+
+        Returns:
+        Q   :   N-by-n matrix whose the vector collumns form an orthonormal basis
+                of the second-order Krylov subspace G_n(A,B,v_0).
+        P   :   N-by-n matrix.
+        T   :   n-by-n upper Hessenberg matrix.
+
+        The following compact Krylov decomposition holds:
+            A @ Q + B @ P = Q @ T + t_{n+1,n} * q_{n+1} @ e_n.T,
+                        Q = P @ T + t_{n+1,n} * P_{n+1} @ e_n.T
+
+        where, e_n is the nth collumn of n-dimensional identity matrix.
+
+        This python code is adapted from [2].
+
+        References:
+        [1] Yangfeng Su, and Zhaojun Bai, SOAR: a second-order Arnoldi 
+            method for the solution of the quadratic eigenvalue problem,
+            SIAM J. Matrix Anal. Appl., 2005, 26(3): 640-659.
+        
+        [2] Ding Lu, Fudan Univ. TOAR: A Two-level Orthogonal ARnoldi procedure.
+            http://www.unige.ch/~dlu/toar.html
+
+        Author:
+        Lucas Kulakauskas, UFSC Brazil, 2020/03/28. '''
+
+        tol = 1e-12
+        N = len(self.u)
         q = self.u / norm(self.u)
-        Q = np.zeros([len(q),n])
+        Q = np.zeros([N,n])
         Q[:,0] = q
         T = np.zeros([n,n])
         f = np.zeros_like(q)
@@ -43,7 +84,7 @@ class SOAR:
             r -= Q[:,:j+1] @ coef
             T[:len(coef), j] = coef
             r_norm = norm(r)
-            if r_norm > 1e-10:
+            if r_norm > tol:
                 T[j+1,j] = r_norm
                 Q[:,j+1] = r / r_norm
                 eye = np.zeros(j+1)
@@ -67,7 +108,7 @@ class SOAR:
                         inv_norm[i] = 1 / np.dot(x,x)
                     coef_f = np.multiply(coef, inv_norm)
                     f_0 = f - F @ coef_f
-                    if np.linalg.norm(f_0) < 1e-10:
+                    if np.linalg.norm(f_0) < tol:
                         break
                     else:
                         F = np.c_[F,f]
