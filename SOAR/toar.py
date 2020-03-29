@@ -151,5 +151,3 @@ if __name__ == "__main__":
 
     Aux = np.r_[ np.c_[A,B], np.c_[np.eye(N), np.zeros_like(A)] ]
     qu = np.r_[Q @ U1, Q @ U2]
-
-    norm ( Aux @ qu - qu @ H[:k,:] )
