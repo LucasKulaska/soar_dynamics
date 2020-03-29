@@ -25,12 +25,10 @@ class MGS:
         return np.c_[X,v]
 
 if __name__ == "__main__":
-    N = 100
+    N = 30
     A = np.random.rand(N,N)
     u = np.random.rand(N)
 
-    mgs = MGS(A, u)
-
-    Q = mgs.projection()
+    Q = MGS.basis(A)
 
     norm ( Q.T @ Q - np.eye(N) )
