@@ -5,6 +5,7 @@ class MGS:
     def __init__(self):
         pass
 
+    @staticmethod
     def basis(X):
         Y = np.zeros_like(X)
         for i, x in enumerate(X.T):
@@ -13,6 +14,7 @@ class MGS:
             Y[:,i] = x / norm(x)
         return Y
     
+    @staticmethod
     def projection(X,v):
 
         coef = np.zeros(X.shape[1])
