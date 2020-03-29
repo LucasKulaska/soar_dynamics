@@ -7,26 +7,6 @@ class SOAR:
         self.B = B
         self.u = u
 
-    @staticmethod
-    def GramSchmidt_basis(X):
-        Y = np.zeros_like(X)
-        for i, x in enumerate(X.T):
-            coef = Y.T @ x
-            x -= Y @ coef
-            Y[:,i] = x / np.linalg.norm(x)
-        return Y
-    
-    @staticmethod
-    def GramSchmidt_projection(X, v, normalized = True):
-        coef = X.T @ v
-        if not normalized:
-            inv_norm = np.zeros(X.shape[1])
-            for i, x in enumerate(X.T):
-                inv_norm[i] = 1 / np.dot(x,x)
-            coef = np.multiply(coef, inv_norm)
-        v -= X @ coef
-        return np.c_[X,v]
-
     def procedure(self, n):
         ''' Q = SOAR(A, B, q1, n)
         computes an orthonormal basis Q of the second-order Krylov subspace:
@@ -66,59 +46,72 @@ class SOAR:
 
         Author:
         Lucas Kulakauskas, UFSC Brazil, 2020/03/28. '''
-
-        tol = 1e-12
+        # Initialize
+        tol = 1e-12 # breakdown threshold
         N = len(self.u)
         q = self.u / norm(self.u)
-        Q = np.zeros([N,n])
-        Q[:,0] = q
-        T = np.zeros([n,n])
         f = np.zeros_like(q)
-        F = None
         A = self.A
         B = self.B
-        deflation = []
+
+        # Prealocate memory
+        Q = np.zeros([N,n])
+        P = np.zeros([N,n])
+        T = np.zeros([n,n])
+
+        Q[:,0] = q
+        P[:,0] = f
+        deflation = [] # Deflation index list.
+
         for j in range(n-1):
-            r = A @ q + B @ f
+            # Recurrence role
+            r = A @ Q[:,j] + B @ P[:,j]
+            aux = norm(r)
+
+            # Gram Schmidt orthogonalization
             coef = Q[:,:j+1].T @ r
             r -= Q[:,:j+1] @ coef
-            T[:len(coef), j] = coef
+            T[:j+1, j] = coef
+            
+
+            # Reorthogonalization, if needed.
+            if norm(r) < 0.7 * aux:
+                # Second Gram Schmidt orthogonalization
+                coef = Q[:,:j+1].T @ r
+                r -= Q[:,:j+1] @ coef
+                T[:j+1, j] += coef
+            
             r_norm = norm(r)
+            T[j+1,j] = r_norm
+
+            # Check for breackdown
             if r_norm > tol:
-                T[j+1,j] = r_norm
                 Q[:,j+1] = r / r_norm
-                eye = np.zeros(j+1)
-                eye[j] = 1
-                v_aux = solve(T[1:j+2,0:j+1], eye )
+                e_j = np.zeros(j+1)
+                e_j[j] = 1
+                v_aux = solve( T[1:j+2,0:j+1], e_j )
                 f = Q[:,:j+1] @ v_aux
             else:
-                deflation.append(j)
+                # Deflation reset
                 T[j+1,j] = 1
-                Q[:,j+1] = np.zeros(len(r))
-                eye = np.zeros(j+1)
-                eye[j] = 1
-                v_aux = solve(T[1:j+2,0:j+1], eye )
+                Q[:,j+1] = np.zeros(N)
+                e_j = np.zeros(j+1)
+                e_j[j] = 1
+                v_aux = solve( T[1:j+2,0:j+1], e_j )
                 f = Q[:,:j+1] @ v_aux
-                if F == None:
-                    F = f
+
+                # Deflation verification
+                coef_f = np.zeros(P[:,:j+1].shape[1])
+                for i, p in enumerate(P[:,:j+1].T):
+                    coef_f[i] = P[:,i].T @ f / np.dot(p,p)
+                f_proj = f - P[:,:j+1] @ coef_f
+                if norm(f_proj) > tol:
+                    deflation.append(j)
                 else:
-                    coef_f = F.T @ f
-                    inv_norm = np.zeros(Y.shape[1])
-                    for i, x in enumerate(F.T):
-                        inv_norm[i] = 1 / np.dot(x,x)
-                    coef_f = np.multiply(coef, inv_norm)
-                    f_0 = f - F @ coef_f
-                    if np.linalg.norm(f_0) < tol:
-                        break
-                    else:
-                        F = np.c_[F,f]
-        j = n
-        r = A @ q + B @ f
-        coef = Q[:,:j+1].T @ r
-        r -= Q[:,:j+1] @ coef
-        r_norm = norm(r)
-        q = r
-        return Q, T, deflation, q, r_norm
+                    print('SOAR lucky breackdown.')
+                    break
+            P[:,j+1] = f
+        return Q, T, P, deflation
 
 if __name__ == "__main__":
     import seaborn as sns
@@ -129,20 +122,22 @@ if __name__ == "__main__":
     u = np.random.rand(N)
 
     soar = SOAR(A, B, u)
-    Q, T, deflation, q, r_norm  = soar.procedure(n = n)
+    Q, T, P, deflation = soar.procedure(n = n)
 
     ax = sns.heatmap(( Q.T @ Q - np.eye(n)), center = 0)
 
     ay = sns.heatmap(T, center = 0)
 
-    eye = np.zeros(n)
-    eye[n-1] = 1
+    e_n = np.zeros([n,1])
+    e_n[n-1] = 1
 
-    T_inv = np.linalg.inv(T)
+    r = A @ Q[:,n-1] + B @ P[:,n-1]
 
-    S = [   [np.zeros([n-1 , 1]), T_inv[1:n, 0:n-1],
-            [0                  , np.zeros([ 1, n-1])]]]
+    # Gram Schmidt orthogonalization
+    coef = Q.T @ r
+    r -= Q @ coef
+    r = r.reshape([N,1]) 
 
-    norm ( A @ Q + B @ Q @ S - Q @ T - r_norm * q @ eye.T )
+    norm ( A @ Q + B @ P - Q @ T - r @ e_n.T )
 
     deflation
