@@ -8,7 +8,8 @@ class SOAR:
         self.u = u
 
     def procedure(self, n):
-        ''' Q = SOAR(A, B, q1, n)
+        '''
+        Q = SOAR(A, B, q1, n)
         computes an orthonormal basis Q of the second-order Krylov subspace:
             span{ Q }   = G_n(A,B,v_0).
                         = {v_0, v_1, v_2, ..., v_{n-1}}
@@ -50,7 +51,7 @@ class SOAR:
         tol = 1e-12 # breakdown threshold
         N = len(self.u)
         q = self.u / norm(self.u)
-        f = np.zeros_like(q)
+        f = np.zeros(N)
         A = self.A
         B = self.B
 
@@ -91,6 +92,7 @@ class SOAR:
                 e_j[j] = 1
                 v_aux = solve( T[1:j+2,0:j+1], e_j )
                 f = Q[:,:j+1] @ v_aux
+            
             else:
                 # Deflation reset
                 T[j+1,j] = 1
