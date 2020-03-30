@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.linalg import norm
 
-class MGS:
+class Mgs:
     def __init__(self):
         pass
 
@@ -29,6 +29,6 @@ if __name__ == "__main__":
     A = np.random.rand(N,N)
     u = np.random.rand(N)
 
-    Q = MGS.basis(A)
+    Q = Mgs.basis(A)
 
     norm ( Q.T @ Q - np.eye(N) )

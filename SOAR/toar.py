@@ -2,7 +2,7 @@ import numpy as np
 from numpy.linalg import solve, norm
 from math import sqrt
 
-class TOAR:
+class Toar:
     def __init__(self, A, B, u):
         self.A = A
         self.B = B
@@ -142,7 +142,7 @@ if __name__ == "__main__":
     B = np.random.rand(N,N)
     u = np.random.rand(N)
 
-    soar = TOAR(A, B, u)
+    soar = Toar(A, B, u)
     Q, U1, U2, H, rk = soar.procedure(k = k)
 
     ax = sns.heatmap(( Q.T @ Q - np.eye(k)), center = 0)

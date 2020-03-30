@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.linalg import solve, norm
 
-class SOAR:
+class Soar:
     def __init__(self, A, B, u):
         self.A = A
         self.B = B
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     B = np.random.rand(N,N)
     u = np.random.rand(N)
 
-    soar = SOAR(A, B, u)
+    soar = Soar(A, B, u)
     Q, T, P, deflation = soar.procedure(n = n)
 
     ax = sns.heatmap(( Q.T @ Q - np.eye(n)), center = 0)
