@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 from numpy.linalg import solve, norm
 from math import sqrt
 
@@ -99,16 +100,18 @@ class Toar:
                 print('Break at Level-one orthogonalization')
                 
             # level-two orthogonalization: MGS
-            s = coef
-            u = U1[:j+1,j]
+            s = copy.deepcopy( coef ) # prevents problems on
+            u = copy.deepcopy( U1[:j+1,j] )
 
             coef = np.zeros(j+1)
             for index in range(j+1):
-                coef[index] = U1[ :j+1, index ].T @ s + U2[ :j+1, index ].T @ u
-                s -= coef * U1[ :j+1, index ]
-                u -= coef * U2[ :j+1, index ]
+                u1 = U1[ :j+1, index ]
+                u2 = U2[ :j+1, index ]
+                coef[index] = np.dot(u1, s) + np.dot(u2, u)
+                s -= coef[index] * u1
+                u -= coef[index] * u2
             
-            beta = sqrt( norm(s)**2 + norm(u)**2 + norm_proj**2 )
+            beta = norm( np.r_[s, u, p] )
             if beta > tol:
                 s = s / beta
                 u = u / beta
