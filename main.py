@@ -1,35 +1,36 @@
 import numpy as np
 import seaborn as sns
 
-from SOAR.soar import Soar
-from SOAR.toar import Toar
-from SOAR.mgs import Mgs
+from arnoldi.soar import Soar
+from arnoldi.toar import Toar
+from arnoldi.mgs import Mgs
 
 # Test setup
 N = 100
-k = 30
+n = 30
 A = np.random.rand(N,N)
 B = np.random.rand(N,N)
 u = np.random.rand(N)
 
 # SOAR
 soar = Soar(A, B, u)
-Q_soar, _, _, _ = soar.procedure(n = k)
+Q_soar, _, _, _ = soar.procedure(n = n)
 
 # TOAR
 toar = Toar(A, B, u)
-Q_toar, _, _, _, _ = toar.procedure(n = k)
+Q_toar, _, _, _= toar.procedure(n = n)
 
 # MGS
-V = np.zeros([N,k])
+# Krylov space
+V = np.zeros([N,n])
 V[:,0] = u
 V[:,1] = A @ u
 
-for i in range(2,k):
+for i in range(2,n):
     V[:,i] = A @ V[:,i-1] + B @ V[:,i-2]
 
 Q_mgs = Mgs.basis(V)
 
-for x in Q_mgs.T:
-    for y in Q_mgs.T:
-        print(x.T @ y)
+print(np.linalg.norm( Q_soar.T @ Q_soar - np.eye(n) ))
+print(np.linalg.norm( Q_toar.T @ Q_toar - np.eye(n) ))
+print(np.linalg.norm( Q_mgs.T @ Q_mgs - np.eye(n) ))

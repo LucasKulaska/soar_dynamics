@@ -100,7 +100,8 @@ class Toar:
                 print('Break at Level-one orthogonalization')
                 
             # level-two orthogonalization: MGS
-            s = copy.deepcopy( coef ) # prevents problems on
+            # deepcopy: prevents problems on copy references.
+            s = copy.deepcopy( coef ) 
             u = copy.deepcopy( U1[:j+1,j] )
 
             coef = np.zeros(j+1)
