@@ -18,7 +18,7 @@ Q_soar, _, _, _ = soar.procedure(n = k)
 
 # TOAR
 toar = Toar(A, B, u)
-Q_toar, _, _, _ = toar.procedure(k = k)
+Q_toar, _, _, _, _ = toar.procedure(n = k)
 
 # MGS
 V = np.zeros([N,k])
@@ -29,3 +29,7 @@ for i in range(2,k):
     V[:,i] = A @ V[:,i-1] + B @ V[:,i-2]
 
 Q_mgs = Mgs.basis(V)
+
+for x in Q_mgs.T:
+    for y in Q_mgs.T:
+        print(x.T @ y)

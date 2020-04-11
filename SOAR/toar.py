@@ -8,7 +8,7 @@ class Toar:
         self.B = B
         self.u = u
 
-    def procedure(self, k):
+    def procedure(self, n):
         '''
         Q = TOAR(A, B, q1, n)
         computes an orthonormal basis Q of the second-order Krylov subspace:
@@ -54,100 +54,95 @@ class Toar:
         Lucas Kulakauskas, UFSC Brazil, 2020/03/28. '''
         # Deflation tolerences
         tol = 1e-12
-        n = len(self.u)
+        N = len(self.u)
 
         # Prealocate memory
-        Q  = np.zeros([n, k+1])
-        U1 = np.zeros([k+1, k+1])
-        U2 = np.zeros([k+1, k+1])
-        H  = np.zeros([k+1, k])
+        Q  = np.zeros([N, n+1])
+        U1 = np.zeros([n+1, n+1])
+        U2 = np.zeros([n+1, n+1])
+        H  = np.zeros([n+1, n])
 
         # Initilization 
-        u = self.u/norm(self.u)
-        Q[:, 0] = u
+        p = self.u/norm(self.u)
+        Q[:, 0] = p
         U1[0, 0] = 1
-        rk = 1
         
-        p = u
-        q = np.zeros(n)
+        q = np.zeros(N)
         
         # Main loop
-        for i in range(k-1):
-            # matrix vector product
-            p = A @ p + B @ q
-            alpha = norm(p)
+        for j in range(n-1):
+            # Recurrence role
+            p = self.A @ p + self.B @ q
+
+            norm_init = norm(p)
+            basis = Q[:,:j+1].T 
+            ## Modified Gram Schmidt procedure
+            # first orthogonalization
+            coef = np.zeros(j+1)
+            for index, v in enumerate(basis):
+                # Projection coeficients and projection subtraction
+                coef[index] = v.T @ p
+                p -= coef[index] * v
             
-            # level-one orthogonalization: MGS
-            x = np.zeros(rk)
-            coef = Q[:, :rk+1].T @ p
-            p -= Q[:, :rk+1] @ coef
+            ## Reorthogonalization if needed
+            if norm(p) < 0.7 * norm_init:
+                sum_coef  = np.zeros_like(coef)
+                for index, v in enumerate(basis):
+                    sum_coef[index] = v.T @ p
+                    p -= sum_coef[index] * v
+                coef += sum_coef
             
-            # Reorthogonalization to p
-            aux = 0
-            if norm(p) < 0.717 * alpha:
-                aux = Q[:, :rk+1].T @ p
-                p -= Q[:, :rk+1] @ aux
-            
-            coef += aux            
-            alpha = norm(p)
-            
-            if alpha > tol :
-                nrk = rk + 1
-                Q[:,nrk-1] = p / alpha
+            norm_proj = norm(p)
+            if norm_proj > tol:
+                Q[:,j+1] = p / norm_proj
             else:
-                nrk = rk
-                print('BREAK')
+                print('Break at Level-one orthogonalization')
                 
             # level-two orthogonalization: MGS
-            sp = coef
-            sq = U1[0:rk+1,i]
-            alpha = norm([sp, sq])
+            s = coef
+            u = U1[:j+1,j]
 
-            h = U1[0:rk+1, :i+1].T @ sp + U2[0:rk+1, :i+1].T @ sq 
-            sp -= U1[0:rk+1, :i+1] @ h
-            sq -= U2[0:rk+1, :i+1] @ h
+            coef = np.zeros(j+1)
+            for index in range(j+1):
+                coef[index] = U1[ :j+1, index ].T @ s + U2[ :j+1, index ].T @ u
+                s -= coef * U1[ :j+1, index ]
+                u -= coef * U2[ :j+1, index ]
             
-            # reorthogonalization to sp and sq
-            aux_h = 0
-            if norm([sp,sq]) < 0.717 * alpha:
-                aux_h = U1[0:rk+1, :i+1].T @ sp + U2[0:rk+1, :i+1].T @ sq 
-                sp -= U1[0:rk+1, :i+1] @ aux_h
-                sq -= U2[0:rk+1, :i+1] @ aux_h
-            
-            h += aux_h
-            
-            beta = sqrt( norm([sp, sq])**2 + alpha**2 )
+            beta = sqrt( norm(s)**2 + norm(u)**2 + norm_proj**2 )
             if beta > tol:
-                sp = sp / beta
-                sq = sq / beta
-                alpha = alpha / beta
+                s = s / beta
+                u = u / beta
+                alpha = norm_proj / beta
             else:
-                print('break')
-            
-            U1[0:rk+1, i+1] = sp
-            U2[0:rk+1, i+1] = sq
-            U1[rk+1, i+1] = alpha
-            H[0:i+1, i] = h
-            H[i+1, i] = beta
-            p = Q[:, 0:rk+1] @ sp + alpha * Q[:, rk+1]
-            q = Q[:, 0:rk+1] @ sq
-            rk = nrk
-        return Q[:,:k], U1[:k, :k], U2[:k, :k], H, rk
+                print('Break at Level-two orthogonalization')
+
+            U1[:j+1, j+1] = s
+            U1[ j+1, j+1] = alpha
+
+            U2[:j+1, j+1] = u
+
+            H[:j+1, j] = coef
+            H[ j+1, j] = beta
+
+            p = Q[:, :j+1] @ s + alpha * Q[:, j+1]
+            q = Q[:, :j+1] @ u
+        return Q[:,:n], U1[:n, :n], U2[:n, :n], H[:n, :n-1]
 
 if __name__ == "__main__":
-    import seaborn as sns
+    # Example and test setup
     N = 100
-    k = 30
+    n = 30
     A = np.random.rand(N,N)
     B = np.random.rand(N,N)
     u = np.random.rand(N)
 
-    soar = Toar(A, B, u)
-    Q, U1, U2, H, rk = soar.procedure(k = k)
+    toar = Toar(A, B, u)
+    Q, U1, U2, H = toar.procedure(n = n)
 
-    ax = sns.heatmap(( Q.T @ Q - np.eye(k)), center = 0)
+    print( norm( Q.T @ Q - np.eye(n) ) ) # must be zero!
 
-    ay = sns.heatmap(H, center = 0)
+    # Error matrix based onde equation (3.1) and (3.2) from [2]
+    Vn = np.r_[Q @ U1, Q @ U2]
+    L = np.r_[ np.c_[A, B], np.c_[np.eye(N), np.zeros_like(B)]]
 
-    Aux = np.r_[ np.c_[A,B], np.c_[np.eye(N), np.zeros_like(A)] ]
-    qu = np.r_[Q @ U1, Q @ U2]
+    print( norm( L @ Vn[:, :n-1] - Vn @ H) ) # must be zero!

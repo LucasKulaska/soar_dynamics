@@ -63,23 +63,31 @@ class Soar:
         Q[:,0] = q
         P[:,0] = f
         deflation = [] # Deflation index list.
+        F = np.array([]) # Deflation vectors
 
         for j in range(n-1):
             # Recurrence role
             r = A @ Q[:,j] + B @ P[:,j]
-            aux = norm(r)
+            norm_init = norm(r)
+            basis = Q[:,:j+1].T 
 
-            # Gram Schmidt orthogonalization
-            coef = Q[:,:j+1].T @ r
-            r -= Q[:,:j+1] @ coef
+            ## Modified Gram Schmidt procedure
+            # fisrt orthogonalization
+            coef = np.zeros(j+1)
+            for index, v in enumerate(basis):
+                # Projection coeficients and projection subtraction
+                coef[index] = v @ r
+                r -= coef[index] * v
+            # Saving coeficients
             T[:j+1, j] = coef
             
 
             # Reorthogonalization, if needed.
-            if norm(r) < 0.7 * aux:
+            if norm(r) < 0.7 * norm_init:
                 # Second Gram Schmidt orthogonalization
-                coef = Q[:,:j+1].T @ r
-                r -= Q[:,:j+1] @ coef
+                for index, v in enumerate(basis):
+                    coef[index] = v @ r
+                    r -= coef[index] * v
                 T[:j+1, j] += coef
             
             r_norm = norm(r)
@@ -103,10 +111,9 @@ class Soar:
                 f = Q[:,:j+1] @ v_aux
 
                 # Deflation verification
-                coef_f = np.zeros(P[:,:j+1].shape[1])
-                for i, p in enumerate(P[:,:j+1].T):
-                    coef_f[i] = P[:,i].T @ f / np.dot(p,p)
-                f_proj = f - P[:,:j+1] @ coef_f
+                for p in P[:, deflation ].T:
+                    coef_f = p.T @ f / p.T @ p
+                    f_proj = f - p * coef_f
                 if norm(f_proj) > tol:
                     deflation.append(j)
                 else:
@@ -116,7 +123,7 @@ class Soar:
         return Q, T, P, deflation
 
 if __name__ == "__main__":
-    import seaborn as sns
+    # Example and test setup
     N = 100
     n = 30
     A = np.random.rand(N,N)
@@ -126,20 +133,19 @@ if __name__ == "__main__":
     soar = Soar(A, B, u)
     Q, T, P, deflation = soar.procedure(n = n)
 
-    ax = sns.heatmap(( Q.T @ Q - np.eye(n)), center = 0)
+    print( norm( Q.T @ Q - np.eye(n) ) ) # must be zero!
 
-    ay = sns.heatmap(T, center = 0)
+    e_n = np.zeros([n-1,1])
+    e_n[n-2] = 1
 
-    e_n = np.zeros([n,1])
-    e_n[n-1] = 1
-
-    r = A @ Q[:,n-1] + B @ P[:,n-1]
+    r = A @ Q[:,n-2] + B @ P[:,n-2]
 
     # Gram Schmidt orthogonalization
-    coef = Q.T @ r
-    r -= Q @ coef
+    for v in Q[:,:n-1].T:
+        coef = v.T @ r
+        r -= coef * v
     r = r.reshape([N,1]) 
 
-    norm ( A @ Q + B @ P - Q @ T - r @ e_n.T )
+    print( norm( A @ Q[:,:n-1] + B @ P[:,:n-1] - Q[:,:n-1] @ T[:n-1,:n-1] - r @ e_n.T ) ) # must be zero!
 
-    deflation
+    print(deflation)
