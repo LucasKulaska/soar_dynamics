@@ -54,14 +54,21 @@ class Mgs:
         return np.c_[Y,v]
 
 if __name__ == "__main__":
-    import time
-    N = 1000
+    N = 100
+    n = 30
     A = np.random.rand(N,N)
+    B = np.random.rand(N,N)
     u = np.random.rand(N)
 
-    start = time.time()
-    Q = Mgs.basis(A)
-    end = time.time()
+    # Krylov space
+    V = np.zeros([N,n])
+    V[:,0] = u
+    V[:,1] = A @ u
+
+    for i in range(2,n):
+        V[:,i] = A @ V[:,i-1] + B @ V[:,i-2]
+
+    Q = Mgs.basis(V)
 
     print(f'The program took {end - start} seconds to execute the orthonormalization.')
     print(norm ( Q.T @ Q - np.eye(N) ))

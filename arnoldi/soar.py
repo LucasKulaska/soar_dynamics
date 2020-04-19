@@ -1,13 +1,14 @@
 import numpy as np
 from numpy.linalg import solve, norm
+from numpy import conj, dot
 
 class Soar:
+    tolerance = 1e-12
     def __init__(self, A, B, u):
-        self.A = A
-        self.B = B
-        self.u = u
+        pass
 
-    def procedure(self, n):
+    @staticmethod
+    def procedure(A, B, u, n):
         '''
         Q = SOAR(A, B, q1, n)
         computes an orthonormal basis Q of the second-order Krylov subspace:
@@ -24,7 +25,7 @@ class Soar:
         n    :   dimension of second-order Krylov subspace.
 
         Returns:
-        Q   :   N-by-n matrix whose the vector collumns form an orthonormal basis
+        Q   :   N-by-n matrix whose the vector columns form an orthonormal basis
                 of the second-order Krylov subspace G_n(A,B,v_0).
         P   :   N-by-n matrix.
         T   :   n-by-n upper Hessenberg matrix.
@@ -33,7 +34,7 @@ class Soar:
             A @ Q + B @ P = Q @ T + t_{n+1,n} * q_{n+1} @ e_n.T,
                         Q = P @ T + t_{n+1,n} * P_{n+1} @ e_n.T
 
-        where, e_n is the nth collumn of n-dimensional identity matrix.
+        where, e_n is the nth column of n-dimensional identity matrix.
 
         This python code is adapted from [2].
 
@@ -48,22 +49,18 @@ class Soar:
         Author:
         Lucas Kulakauskas, UFSC Brazil, 2020/03/28. '''
         # Initialize
-        tol = 1e-12 # breakdown threshold
-        N = len(self.u)
-        q = self.u / norm(self.u)
+        N = len(u)
+        q = u / norm(u)
         f = np.zeros(N)
-        A = self.A
-        B = self.B
 
-        # Prealocate memory
-        Q = np.zeros([N,n])
-        P = np.zeros([N,n])
-        T = np.zeros([n,n])
+        # Allocate memory
+        Q = np.zeros([N,n], dtype = 'complex')
+        P = np.zeros([N,n], dtype = 'complex')
+        T = np.zeros([n,n], dtype = 'complex')
 
         Q[:,0] = q
         P[:,0] = f
         deflation = [] # Deflation index list.
-        F = np.array([]) # Deflation vectors
 
         for j in range(n-1):
             # Recurrence role
@@ -72,29 +69,29 @@ class Soar:
             basis = Q[:,:j+1].T 
 
             ## Modified Gram Schmidt procedure
-            # fisrt orthogonalization
-            coef = np.zeros(j+1)
+            # first orthogonalization
+            coef = np.zeros(j+1, dtype = 'complex')
             for index, v in enumerate(basis):
-                # Projection coeficients and projection subtraction
-                coef[index] = v @ r
+                # Projection coefficients and projection subtraction
+                coef[index] = dot( conj(v), r)
                 r -= coef[index] * v
-            # Saving coeficients
+            # Saving coefficients
             T[:j+1, j] = coef
             
 
-            # Reorthogonalization, if needed.
+            # Re-orthogonalization, if needed.
             if norm(r) < 0.7 * norm_init:
                 # Second Gram Schmidt orthogonalization
                 for index, v in enumerate(basis):
-                    coef[index] = v @ r
+                    coef[index] = dot( conj(v), r)
                     r -= coef[index] * v
                 T[:j+1, j] += coef
             
             r_norm = norm(r)
             T[j+1,j] = r_norm
 
-            # Check for breackdown
-            if r_norm > tol:
+            # Check for breakdown
+            if r_norm > Soar.tolerance:
                 Q[:,j+1] = r / r_norm
                 e_j = np.zeros(j+1)
                 e_j[j] = 1
@@ -111,13 +108,15 @@ class Soar:
                 f = Q[:,:j+1] @ v_aux
 
                 # Deflation verification
-                for p in P[:, deflation ].T:
-                    coef_f = p.T @ f / p.T @ p
-                    f_proj = f - p * coef_f
-                if norm(f_proj) > tol:
+                f_proj = f
+                for p in P[:, deflation ]:
+                    coef_f = dot( conj(p), f ) / dot( conj(p), p ) 
+                    f_proj = f_proj - p * coef_f
+                
+                if norm(f_proj) > Soar.tolerance:
                     deflation.append(j)
                 else:
-                    print('SOAR lucky breackdown.')
+                    print('SOAR lucky breakdown.')
                     break
             P[:,j+1] = f
         return Q, T, P, deflation
@@ -130,8 +129,7 @@ if __name__ == "__main__":
     B = np.random.rand(N,N)
     u = np.random.rand(N)
 
-    soar = Soar(A, B, u)
-    Q, T, P, deflation = soar.procedure(n = n)
+    Q, T, P, deflation = Soar.procedure(A, B, u, n = n)
 
     print( norm( Q.T @ Q - np.eye(n) ) ) # must be zero!
 
