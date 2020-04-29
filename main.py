@@ -3,6 +3,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from time import time
 from scipy.sparse import csc_matrix
+from numpy.linalg import norm
 
 
 from arnoldi.soar import Soar
@@ -53,17 +54,15 @@ pr = cProfile.Profile()
 pr.enable()
 
 
-rom = ROM(K, C, M, F, freq)
-
-rom.moment_matching = 7
-rom.tol_svd = 1e-10
-rom.tol_proj = 1e-5
-rom.num_freqs = 7
-rom.freq_step = 50
+rom = ROM(K, C, M, F, freq, moment_matching = 20,
+                            tol_svd = 1e-6,
+                            tol_proj = 1e-1,
+                            num_freqs = 5,
+                            freq_step = 25)
 
 
 start = time()
-solution_rom, error = rom.projection()
+solution_rom, error, expansion_frequencies = rom.projection()
 end = time()
 
 
@@ -81,23 +80,30 @@ ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
 ps.print_stats()
 print(s.getvalue())
 
+real_error = np.zeros_like(freq)
+for i in range(len(freq)):
+    real_error[i] = norm(solution_fom[:,i] - solution_rom[:,i]) / norm(solution_fom[:,i])
+
 #%% plot
 
 fig = plt.figure(figsize=[12,8])
 ax = fig.add_subplot(1,1,1)
 plt.semilogy(freq, np.abs(solution_fom[15, :]), color = [0,0,0], linewidth=3)
 plt.semilogy(freq, np.abs(solution_rom[15, :]), color = [1,0,0], linewidth=1.5)
+plt.semilogy(expansion_frequencies, np.ones_like(expansion_frequencies)*1e-6, 'bo', linewidth=1.5)
 ax.set_title(('Full order vs Reduced order Model'), fontsize = 18, fontweight = 'bold')
 ax.set_xlabel(('Frequency [Hz]'), fontsize = 16, fontweight = 'bold')
 ax.set_ylabel(("FRF's magnitude"), fontsize = 16, fontweight = 'bold')
-ax.legend(['Full Order Model','Reduced Order Model'])
+ax.legend(['Full Order Model: {:6.0f}s'.format(end2 - end),'Reduced Order Model: {:6.0f}s'.format(end - start), 'Expansion frequencies'])
 plt.show()
 
 fig = plt.figure(figsize=[12,8])
 ax = fig.add_subplot(1,1,1)
-plt.semilogy(freq, error, color = [0,0,0], linewidth=3)
+plt.semilogy(freq, real_error, color = [0,0,0], linewidth=3)
+plt.semilogy(freq, error, color = [1,0,0], linewidth=1.5)
+plt.semilogy(expansion_frequencies, np.ones_like(expansion_frequencies)*1e-1, 'bo', linewidth=1.5)
 ax.set_title(('Full order vs Reduced order Model'), fontsize = 18, fontweight = 'bold')
 ax.set_xlabel(('Frequency [Hz]'), fontsize = 16, fontweight = 'bold')
 ax.set_ylabel(("Error"), fontsize = 16, fontweight = 'bold')
-ax.legend(['Error'])
+ax.legend([ 'Real Displacement Error','Force Relative Error', 'Expansion frequencies'])
 plt.show()

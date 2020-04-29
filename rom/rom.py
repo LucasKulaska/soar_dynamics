@@ -1,26 +1,41 @@
 import numpy as np
-from scipy.linalg import lu_factor, lu_solve
+from scipy.linalg import lu_factor, lu_solve, solve
 from scipy.sparse.linalg import spsolve, splu
-from numpy.linalg import svd, norm
+from numpy.linalg import svd, norm, pinv, lstsq
 from math import pi, floor
-from statistics import median_high
+from statistics import median_low
 
 from arnoldi.soar import Soar
 
 class ROM:
     # Reduced Order Model configuration
-    moment_matching = 10
-    tol_svd = 1e-10
-    tol_proj = 1e-5
-    num_freqs = 5
-    freq_step = 100
 
-    def __init__(self, stiffness, damping, mass, force, freq):
+
+    def __init__(self, stiffness, damping, mass, force, freq, **kwargs):
         self.K = stiffness
         self.C = damping
         self.M = mass
         self.b = force
         self.freq = freq
+
+        # Config
+        self.moment_matching = kwargs.get('moment_matching', 10)
+        self.tol_svd = kwargs.get('tol_svd', 1e-10)
+        self.tol_proj = kwargs.get('tol_proj', 1e-3)
+        self.num_freqs = kwargs.get('num_freqs', 5)
+        self.freq_step = kwargs.get('freq_step', 100)
+        
+        steps = self.freq_step * np.arange(-self.num_freqs+1,1)
+
+        self.exp_freqs  = self.freq_central + steps
+
+        for i, freq in enumerate(self.exp_freqs):
+            index = np.abs(self.freq - freq).argmin()
+            self.exp_freqs[i] = self.freq[index]
+
+        self.exp_basis = {}
+        self.solution = {}
+        self.proj_error = {}
     
     @property
     def norm_b(self):
@@ -38,6 +53,10 @@ class ROM:
     def C_array(self):
         return self.C.toarray()
 
+    @property
+    def freq_central(self):
+        return median_low(self.freq)
+
     def full_order(self):
         solution = np.empty([self.number_dof, len(self.freq)], dtype = 'complex')
         for i, freq in enumerate(self.freq):
@@ -46,25 +65,42 @@ class ROM:
             solution[:, i] = spsolve(K_dynamic, self.b)
         return solution
     
-    def expansion_freqs(self):
-        num_freqs = self.num_freqs
+    def strategy(self, freq):
+        freq_central = self.freq_central
         freq_step = self.freq_step
 
-        # num_freqs must be a odd number
-        if num_freqs%2 == 0:
-            num_freqs =+ 1
-        
-        aux = floor(num_freqs / 2)
-        freq_central = median_high(self.freq)
-        lower_freq = freq_central - aux * freq_step
+        # add frequency where tol wasn't reached to expansion frequencies 
+        self.exp_freqs = np.r_[self.exp_freqs, freq]
 
-        expansion_freqs = np.zeros(num_freqs)
+        # Take out the further freq from the actual solving frequency
+        index = np.abs(self.exp_freqs - freq).argmax()
+        self.exp_freqs = np.delete(self.exp_freqs, index)
 
-        for i in range(num_freqs):
-            freq = i * lower_freq
-            index = np.abs(self.freq - freq).argmin()
-            expansion_freqs[i] = self.freq[index]
-        return expansion_freqs
+
+        if freq <= freq_central:
+            index = self.exp_freqs.argmax()
+            self.exp_freqs = np.delete(self.exp_freqs, index)
+            new_freq = freq - freq_step
+            index = np.abs(self.freq - new_freq).argmin()
+
+            if self.freq[index] in self.exp_freqs:
+                mid_freq = self.freq[index] + freq
+                index = np.abs(self.freq - mid_freq).argmin()
+                self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
+            else:
+                self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
+        else:
+            index = self.exp_freqs.argmin()
+            self.exp_freqs = np.delete(self.exp_freqs, index)
+            new_freq = freq + freq_step
+            index = np.abs(self.freq - new_freq).argmin()
+
+            if self.freq[index] in self.exp_freqs:
+                mid_freq = self.freq[index] + freq
+                index = np.abs(self.freq - mid_freq).argmin()
+                self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
+            else:
+                self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
 
     def expansion_basis(self, expansion_freq):
         ## Init: defining the dynamic stiffness matrix and dynamic damping matrix
@@ -82,17 +118,28 @@ class ROM:
         A = K_inv.solve( C_dynamic )
         B = K_inv.solve( self.M_array )
         u = K_inv.solve( self.b )
+        # ABu = spsolve(-K_dynamic, np.c_[C_dynamic, self.M_array, self.b])
+        # A = ABu[:,:C_dynamic.shape[1]]
+        # B = ABu[:,C_dynamic.shape[1]:-1]
+        # u = ABu[:,-1]
         Q, _, _, _ = Soar.procedure(A, B, u, n = self.moment_matching)
 
         return Q, u
 
     def basis(self):
         # Init
-        expansion_freqs = self.expansion_freqs()
 
-        for i, freq in enumerate(expansion_freqs):
-
-            Q, _ = self.expansion_basis(freq)
+        for i, f in enumerate(self.exp_freqs):
+            if f in self.exp_basis:
+                Q = self.exp_basis[f]
+            
+            else:
+                Q, u = self.expansion_basis(f)
+                # save expansion basis already calculated
+                self.exp_basis.update({f : Q})
+                self.solution.update({f : u})
+                self.proj_error.update({f : 0})
+                
             if i == 0:
                 basis = Q
             else:
@@ -100,6 +147,7 @@ class ROM:
         
         # Basis reduction via Singular value Decomposition
         u, s, vh = svd(basis)
+        print(s)
         
         # Take the singular values that are relevant
         index = s > self.tol_svd
@@ -107,12 +155,28 @@ class ROM:
         index_u = np.zeros(u.shape[1], dtype = 'bool')
         index_u[:len(index)] = index
 
-        U, Sigma, V_hermit = u[:, index_u], np.diag( s[index] ), vh[index,:]        
-        return U, Sigma, V_hermit
+        U, Sigma, V_hermit = u[:, index_u], np.diag( s[index] ), vh[index,:]
+        W  = U @ Sigma @ V_hermit 
+        return W
+    
+    def projection_step(self, freq, M_rom, C_rom, K_rom, b_rom, W ):
+        omega = 2 * pi * freq
+        K_dynamic_rom = - omega**2 * M_rom + 1j*omega * C_rom + K_rom
+
+        x_rom = solve(K_dynamic_rom, b_rom)
+
+        x_proj = W @ x_rom
+
+        error = self.error(freq, x_proj)
+        if error < self.tol_proj:
+            self.proj_error.update({freq : error})
+            self.solution.update({freq : x_proj})
+        return error
 
     def projection(self):
-        U, Sigma, V_hermit = self.basis()
-        W  = U @ Sigma @ V_hermit
+
+        error = 0
+        W = self.basis()
         W_hermit = W.conj().T
 
         K_rom = W_hermit @ self.K @ W
@@ -120,19 +184,42 @@ class ROM:
         M_rom = W_hermit @ self.M @ W
         b_rom = W_hermit @ self.b
 
-        error = np.zeros_like(self.freq)
-        solution = np.zeros([self.number_dof, len(self.freq)], dtype = 'complex')
+        frequencies = self.freq[self.freq_central-1::-1]
+        for freq in frequencies:
+            if freq in self.solution:
+                pass
+            else:
+                error = self.projection_step(freq, M_rom, C_rom, K_rom, b_rom, W)
+                if error > self.tol_proj:
+                    self.strategy(freq)
+                    W = self.basis()
+                    W_hermit = W.conj().T
 
-        for i, freq in enumerate(self.freq):
-            omega = 2 * pi * freq
-            K_dynamic_rom = - omega**2 * M_rom + 1j*omega * C_rom + K_rom
-            x_rom = spsolve(K_dynamic_rom, b_rom)
+                    K_rom = W_hermit @ self.K @ W
+                    C_rom = W_hermit @ self.C @ W
+                    M_rom = W_hermit @ self.M @ W
+                    b_rom = W_hermit @ self.b
+        
+        frequencies = self.freq[self.freq_central:]
+        for freq in frequencies:
+            if freq in self.solution:
+                pass
+            else:
+                error = self.projection_step(freq, M_rom, C_rom, K_rom, b_rom, W)
+                if error > self.tol_proj:
+                    self.strategy(freq)
+                    W = self.basis()
+                    W_hermit = W.conj().T
 
-            x_proj = W @ x_rom
-
-            error[i] = self.error(freq, x_proj)
-            solution[:, i] = x_proj
-        return solution, error
+                    K_rom = W_hermit @ self.K @ W
+                    C_rom = W_hermit @ self.C @ W
+                    M_rom = W_hermit @ self.M @ W
+                    b_rom = W_hermit @ self.b
+        
+        
+        solution = np.array([value for (key, value) in sorted(self.solution.items())]).T
+        error = np.array([value for (key, value) in sorted(self.proj_error.items())])
+        return solution, error, list(self.exp_basis.keys())
 
     def error(self, freq, x_proj):
         omega = 2 * pi * freq
