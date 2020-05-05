@@ -64,7 +64,7 @@ class Soar:
 
         for j in range(n-1):
             # Recurrence role
-            r = A @ Q[:,j] + B @ P[:,j]
+            r = A (Q[:,j]) + B (P[:,j])
             norm_init = norm(r)
             basis = Q[:,:j+1].T 
 

@@ -24,14 +24,17 @@ class ROM:
         self.tol_proj = kwargs.get('tol_proj', 1e-3)
         self.num_freqs = kwargs.get('num_freqs', 5)
         self.freq_step = kwargs.get('freq_step', 100)
-        
-        steps = self.freq_step * np.arange(-self.num_freqs+1,1)
 
-        self.exp_freqs  = self.freq_central + steps
+        if self.num_freqs == 1:
+            self.exp_freqs  = self.freq_central
+        else:
+            steps = self.freq_step * np.arange(-self.num_freqs+1,1)
 
-        for i, freq in enumerate(self.exp_freqs):
-            index = np.abs(self.freq - freq).argmin()
-            self.exp_freqs[i] = self.freq[index]
+            self.exp_freqs  = self.freq_central + steps
+
+            for i, freq in enumerate(self.exp_freqs):
+                index = np.abs(self.freq - freq).argmin()
+                self.exp_freqs[i] = self.freq[index]
 
         self.exp_basis = {}
         self.solution = {}
@@ -66,41 +69,45 @@ class ROM:
         return solution
     
     def strategy(self, freq):
-        freq_central = self.freq_central
-        freq_step = self.freq_step
 
-        # add frequency where tol wasn't reached to expansion frequencies 
-        self.exp_freqs = np.r_[self.exp_freqs, freq]
-
-        # Take out the further freq from the actual solving frequency
-        index = np.abs(self.exp_freqs - freq).argmax()
-        self.exp_freqs = np.delete(self.exp_freqs, index)
-
-
-        if freq <= freq_central:
-            index = self.exp_freqs.argmax()
-            self.exp_freqs = np.delete(self.exp_freqs, index)
-            new_freq = freq - freq_step
-            index = np.abs(self.freq - new_freq).argmin()
-
-            if self.freq[index] in self.exp_freqs:
-                mid_freq = self.freq[index] + freq
-                index = np.abs(self.freq - mid_freq).argmin()
-                self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
-            else:
-                self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
+        if self.num_freqs == 1:
+            self.exp_freqs = freq
         else:
-            index = self.exp_freqs.argmin()
-            self.exp_freqs = np.delete(self.exp_freqs, index)
-            new_freq = freq + freq_step
-            index = np.abs(self.freq - new_freq).argmin()
+            freq_central = self.freq_central
+            freq_step = self.freq_step
 
-            if self.freq[index] in self.exp_freqs:
-                mid_freq = self.freq[index] + freq
-                index = np.abs(self.freq - mid_freq).argmin()
-                self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
+            # add frequency where tol wasn't reached to expansion frequencies 
+            self.exp_freqs = np.r_[self.exp_freqs, freq]
+
+            # Take out the further freq from the actual solving frequency
+            index = np.abs(self.exp_freqs - freq).argmax()
+            self.exp_freqs = np.delete(self.exp_freqs, index)
+
+
+            if freq <= freq_central:
+                index = self.exp_freqs.argmax()
+                self.exp_freqs = np.delete(self.exp_freqs, index)
+                new_freq = freq - freq_step
+                index = np.abs(self.freq - new_freq).argmin()
+
+                if self.freq[index] in self.exp_freqs:
+                    mid_freq = self.freq[index] + freq
+                    index = np.abs(self.freq - mid_freq).argmin()
+                    self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
+                else:
+                    self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
             else:
-                self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
+                index = self.exp_freqs.argmin()
+                self.exp_freqs = np.delete(self.exp_freqs, index)
+                new_freq = freq + freq_step
+                index = np.abs(self.freq - new_freq).argmin()
+
+                if self.freq[index] in self.exp_freqs:
+                    mid_freq = self.freq[index] + freq
+                    index = np.abs(self.freq - mid_freq).argmin()
+                    self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
+                else:
+                    self.exp_freqs = np.r_[self.exp_freqs, self.freq[index]]
 
     def expansion_basis(self, expansion_freq):
         ## Init: defining the dynamic stiffness matrix and dynamic damping matrix
@@ -110,18 +117,14 @@ class ROM:
         K_dynamic = - omega**2 * self.M + 1j * omega * self.C + self.K
 
         # Turn C_dynamic into NpArray used below
-        C_dynamic = 2 * 1j * omega * self.M_array + self.C_array
+        C_dynamic = 2 * 1j * omega * self.M + self.C
 
         ## Defining the second order Krylov subspace, apply Arnoldi procedure
         K_inv = splu(-K_dynamic) # Sparse complete LU decomposition solver
 
-        A = K_inv.solve( C_dynamic )
-        B = K_inv.solve( self.M_array )
+        A = lambda v: K_inv.solve( C_dynamic @ v )
+        B = lambda v: K_inv.solve( self.M @ v )
         u = K_inv.solve( self.b )
-        # ABu = spsolve(-K_dynamic, np.c_[C_dynamic, self.M_array, self.b])
-        # A = ABu[:,:C_dynamic.shape[1]]
-        # B = ABu[:,C_dynamic.shape[1]:-1]
-        # u = ABu[:,-1]
         Q, _, _, _ = Soar.procedure(A, B, u, n = self.moment_matching)
 
         return Q, u
@@ -129,35 +132,44 @@ class ROM:
     def basis(self):
         # Init
 
-        for i, f in enumerate(self.exp_freqs):
-            if f in self.exp_basis:
-                Q = self.exp_basis[f]
-            
-            else:
-                Q, u = self.expansion_basis(f)
-                # save expansion basis already calculated
-                self.exp_basis.update({f : Q})
-                self.solution.update({f : u})
-                self.proj_error.update({f : 0})
+        if self.num_freqs == 1:
+            f = self.exp_freqs
+            Q, u = self.expansion_basis(f)
+            # save expansion basis already calculated
+            self.exp_basis.update({f : Q})
+            self.solution.update({f : u})
+            self.proj_error.update({f : 0})
+            return Q
+        else:
+            for i, f in enumerate(self.exp_freqs):
+                if f in self.exp_basis:
+                    Q = self.exp_basis[f]
                 
-            if i == 0:
-                basis = Q
-            else:
-                basis = np.c_[basis, Q]
-        
-        # Basis reduction via Singular value Decomposition
-        u, s, vh = svd(basis)
-        print(s)
-        
-        # Take the singular values that are relevant
-        index = s > self.tol_svd
+                else:
+                    Q, u = self.expansion_basis(f)
+                    # save expansion basis already calculated
+                    self.exp_basis.update({f : Q})
+                    self.solution.update({f : u})
+                    self.proj_error.update({f : 0})
+                    
+                if i == 0:
+                    basis = Q
+                else:
+                    basis = np.c_[basis, Q]
+            
+            # Basis reduction via Singular value Decomposition
+            u, s, vh = svd(basis)
+            print(s)
+            
+            # Take the singular values that are relevant
+            index = s > self.tol_svd
 
-        index_u = np.zeros(u.shape[1], dtype = 'bool')
-        index_u[:len(index)] = index
+            index_u = np.zeros(u.shape[1], dtype = 'bool')
+            index_u[:len(index)] = index
 
-        U, Sigma, V_hermit = u[:, index_u], np.diag( s[index] ), vh[index,:]
-        W  = U @ Sigma @ V_hermit 
-        return W
+            U, Sigma, V_hermit = u[:, index_u], np.diag( s[index] ), vh[index,:]
+            W  = U @ Sigma @ V_hermit 
+            return W
     
     def projection_step(self, freq, M_rom, C_rom, K_rom, b_rom, W ):
         omega = 2 * pi * freq
@@ -200,6 +212,14 @@ class ROM:
                     M_rom = W_hermit @ self.M @ W
                     b_rom = W_hermit @ self.b
         
+        error = 0
+        W = self.exp_basis[self.freq_central]
+        W_hermit = W.conj().T
+
+        K_rom = W_hermit @ self.K @ W
+        C_rom = W_hermit @ self.C @ W
+        M_rom = W_hermit @ self.M @ W
+        b_rom = W_hermit @ self.b
         frequencies = self.freq[self.freq_central:]
         for freq in frequencies:
             if freq in self.solution:

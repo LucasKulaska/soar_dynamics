@@ -54,10 +54,10 @@ pr = cProfile.Profile()
 pr.enable()
 
 
-rom = ROM(K, C, M, F, freq, moment_matching = 20,
+rom = ROM(K, C, M, F, freq, moment_matching = 40,
                             tol_svd = 1e-6,
                             tol_proj = 1e-1,
-                            num_freqs = 5,
+                            num_freqs = 1,
                             freq_step = 25)
 
 
@@ -94,7 +94,7 @@ plt.semilogy(expansion_frequencies, np.ones_like(expansion_frequencies)*1e-6, 'b
 ax.set_title(('Full order vs Reduced order Model'), fontsize = 18, fontweight = 'bold')
 ax.set_xlabel(('Frequency [Hz]'), fontsize = 16, fontweight = 'bold')
 ax.set_ylabel(("FRF's magnitude"), fontsize = 16, fontweight = 'bold')
-ax.legend(['Full Order Model: {:6.0f}s'.format(end2 - end),'Reduced Order Model: {:6.0f}s'.format(end - start), 'Expansion frequencies'])
+ax.legend(['Full Order Model: {:6.2f}s'.format(end2 - end),'Reduced Order Model: {:6.2f}s'.format(end - start), 'Expansion frequencies'])
 plt.show()
 
 fig = plt.figure(figsize=[12,8])
