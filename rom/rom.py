@@ -124,7 +124,7 @@ class ROM:
 
         A = lambda v: K_inv.solve( C_dynamic @ v )
         B = lambda v: K_inv.solve( self.M @ v )
-        u = K_inv.solve( self.b )
+        u = - K_inv.solve( self.b )
         Q, _, _, _ = Soar.procedure(A, B, u, n = self.moment_matching)
 
         return Q, u

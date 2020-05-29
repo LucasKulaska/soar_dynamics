@@ -80,9 +80,7 @@ ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
 ps.print_stats()
 print(s.getvalue())
 
-real_error = np.zeros_like(freq)
-for i in range(len(freq)):
-    real_error[i] = norm(solution_fom[:,i] - solution_rom[:,i]) / norm(solution_fom[:,i])
+real_error = np.divide( norm(solution_fom - solution_rom, axis=0), norm(solution_fom, axis=0) )
 
 #%% plot
 
